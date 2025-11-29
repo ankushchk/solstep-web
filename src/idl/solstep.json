@@ -1,0 +1,87 @@
+{
+  "version": "0.1.0",
+  "name": "solstep",
+  "instructions": [
+    {
+      "name": "createChallenge",
+      "accounts": [
+        { "name": "organizer", "isMut": true, "isSigner": true },
+        { "name": "challenge", "isMut": true, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "stakeAmount", "type": "u64" },
+        { "name": "startTs", "type": "i64" },
+        { "name": "endTs", "type": "i64" },
+        { "name": "maxParticipants", "type": "u32" }
+      ]
+    },
+    {
+      "name": "initEscrow",
+      "accounts": [
+        { "name": "organizer", "isMut": true, "isSigner": true },
+        { "name": "challenge", "isMut": true, "isSigner": false },
+        { "name": "escrow", "isMut": true, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "joinChallenge",
+      "accounts": [
+        { "name": "participant", "isMut": true, "isSigner": true },
+        { "name": "challenge", "isMut": true, "isSigner": false },
+        { "name": "escrow", "isMut": true, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "finalizeChallenge",
+      "accounts": [
+        { "name": "organizer", "isMut": true, "isSigner": true },
+        { "name": "challenge", "isMut": true, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "payoutWinner",
+      "accounts": [
+        { "name": "organizer", "isMut": true, "isSigner": true },
+        { "name": "winner", "isMut": true, "isSigner": false },
+        { "name": "challenge", "isMut": true, "isSigner": false },
+        { "name": "escrow", "isMut": true, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "shareAmount", "type": "u64" }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "challenge",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "organizer", "type": "publicKey" },
+          { "name": "stakeAmount", "type": "u64" },
+          { "name": "startTs", "type": "i64" },
+          { "name": "endTs", "type": "i64" },
+          { "name": "maxParticipants", "type": "u32" },
+          { "name": "participantCount", "type": "u32" },
+          { "name": "totalStake", "type": "u64" },
+          { "name": "isFinalized", "type": "bool" },
+          {
+            "name": "participants",
+            "type": {
+              "array": ["publicKey", 50]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
