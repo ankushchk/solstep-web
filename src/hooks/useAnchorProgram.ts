@@ -84,17 +84,89 @@ export function useAnchorProgram() {
         commitment: "confirmed",
       });
 
-      const programId = new PublicKey(
-        "C8hypxjf45Kne9PaLBWtg9tRqdingEaWFyvVUL4A6AVQ"
-      );
+      // Get program ID from IDL if available, otherwise use hardcoded value
+      const programIdString =
+        (solstepIdl as any).address ||
+        "3aezMEt3EwNGU7uxBSNNwmXN5b54WXzmyosXpXSdma52";
+      const programId = new PublicKey(programIdString);
+
+      // Normalize IDL format - Anchor expects accounts to have full type definitions
+      // The new IDL format has accounts with just names/discriminators and types separately
+      // We need to merge them for Anchor compatibility
+      const normalizedIdl = { ...solstepIdl } as any;
+
+      // If accounts array only has names/discriminators, merge with types
+      if (
+        normalizedIdl.accounts &&
+        normalizedIdl.types &&
+        Array.isArray(normalizedIdl.accounts)
+      ) {
+        const typeMap = new Map();
+        if (Array.isArray(normalizedIdl.types)) {
+          normalizedIdl.types.forEach((type: any) => {
+            if (type.name && type.type) {
+              typeMap.set(type.name, type.type);
+            }
+          });
+        }
+
+        // Replace accounts array with full type definitions
+        normalizedIdl.accounts = normalizedIdl.accounts.map((acc: any) => {
+          const typeDef = typeMap.get(acc.name);
+          if (typeDef) {
+            return {
+              name: acc.name,
+              ...(acc.discriminator && { discriminator: acc.discriminator }),
+              type: typeDef,
+            };
+          }
+          return acc;
+        });
+      }
 
       // Program constructor: new Program(idl, programId, provider)
       // Using 'as any' for IDL to handle type mismatch with JSON import
-      // @ts-expect-error - Anchor 0.30.1 has type inference issues with Program constructor
-      const program = new Program(solstepIdl as any, programId, provider);
+      let program: any;
+      try {
+        // @ts-expect-error - Anchor 0.30.1 has type inference issues with Program constructor
+        program = new Program(normalizedIdl, programId, provider);
+      } catch (err: any) {
+        // If normalization fails, try with original IDL
+        console.warn(
+          "Failed with normalized IDL, trying original format:",
+          err
+        );
+        try {
+          // @ts-expect-error - Anchor 0.30.1 has type inference issues with Program constructor
+          program = new Program(solstepIdl as any, programId, provider);
+        } catch (err2: any) {
+          throw new Error(
+            `Failed to initialize program: ${
+              err2?.message || err2
+            }. Original error: ${err?.message || err}`
+          );
+        }
+      }
+
+      // Verify program is accessible by checking if it has the expected structure
+      if (!program || !program.methods) {
+        throw new Error("Program initialized but methods are not accessible");
+      }
+
+      // Test account access to verify it's working
+      try {
+        // This will fail if account doesn't exist, but we just want to verify program structure
+        const accountNames = Object.keys(program.account || {});
+        console.log("Available account names:", accountNames);
+      } catch (e) {
+        console.warn("Could not list account names:", e);
+      }
+
       console.log("Anchor program initialized successfully", {
         programId: programId.toBase58(),
         wallet: wallet.publicKey?.toBase58(),
+        hasMethods: !!program.methods,
+        hasAccounts: !!program.account,
       });
       setInitError(null);
       return program as SolstepProgram;

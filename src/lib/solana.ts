@@ -2,7 +2,7 @@ import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
 
 // Store as string to avoid issues with PublicKey creation at module load
 export const SOLSTEP_PROGRAM_ID_STRING =
-  "C8hypxjf45Kne9PaLBWtg9tRqdingEaWFyvVUL4A6AVQ";
+  "3aezMEt3EwNGU7uxBSNNwmXN5b54WXzmyosXpXSdma52";
 
 // Lazy getter for PublicKey to ensure it's created in client context
 // This prevents errors when Buffer is not yet available

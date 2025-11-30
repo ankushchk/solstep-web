@@ -110,6 +110,7 @@ type ChallengeWithProgress = ChallengeAccount & {
   organizerName?: string; // For Firestore challenges
   endTs?: number; // For Firestore challenges
   title?: string; // Challenge title
+  stakeAmount?: number; // Stake amount in SOL
 };
 
 // Helper function to get challenge ID
@@ -377,6 +378,7 @@ export default function MapPage() {
               startTs: data.startTs || Math.floor(Date.now() / 1000),
               endTs: data.endTs || Math.floor(Date.now() / 1000) + 86400,
               maxParticipants: data.maxParticipants || 10,
+              stakeAmount: data.stakeAmount || 0,
               status: data.status || "active",
               winner: data.winner || null,
               title: data.title || "10-Spot Challenge",
@@ -490,8 +492,27 @@ export default function MapPage() {
     }
   };
 
-  // Challenge creation handler - Auto-selects 10 random spots, no Solana required
+  // Challenge creation handler - Creates on-chain and syncs to Firestore
   const handleCreateChallenge = async () => {
+    // Validate wallet connection
+    if (!wallet.connected || !wallet.publicKey) {
+      setTxStatus({
+        type: "error",
+        message: "Please connect your wallet to create a challenge",
+      });
+      return;
+    }
+
+    // Validate stake amount (required)
+    const stakeValue = Number(stakeSol);
+    if (!stakeSol || isNaN(stakeValue) || stakeValue <= 0) {
+      setTxStatus({
+        type: "error",
+        message: "Please enter a valid stake amount (must be greater than 0)",
+      });
+      return;
+    }
+
     // Check daily limit first
     if (user) {
       const todayCount = await checkDailyChallengeLimit();
@@ -528,49 +549,77 @@ export default function MapPage() {
       const now = Math.floor(Date.now() / 1000);
       const duration = Number(durationHours || "24") * 60 * 60;
 
-      // Generate a unique challenge ID (using timestamp + random)
-      const challengeId = `challenge_${Date.now()}_${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
+      // Convert SOL to lamports
+      const stakeAmountLamports = BigInt(
+        Math.floor(stakeValue * LAMPORTS_PER_SOL)
+      );
 
-      // Store challenge with 10 random spots in Firestore (no Solana required)
+      setTxStatus({
+        type: "success",
+        message: "Creating challenge on-chain...",
+      });
+
+      // Step 1: Create challenge on-chain
+      const challengePda = await createChallenge({
+        stakeAmountLamports,
+        startTs: now,
+        endTs: now + duration,
+        maxParticipants: Number(maxParticipants || "10"),
+      });
+
+      setTxStatus({
+        type: "success",
+        message: "Initializing escrow...",
+      });
+
+      // Step 2: Initialize escrow
+      await initEscrow(challengePda);
+
+      // Step 3: Store challenge metadata in Firestore (spots, title, etc.)
+      const challengeId = challengePda.toBase58();
       await setDoc(doc(db, "challenges", challengeId), {
         title: challengeTitle.trim() || "10-Spot Challenge",
         spots: randomSpots.map((s) => s.id),
         spotNames: randomSpots.map((s) => s.name),
-        organizer: user?.uid || "anonymous",
+        organizer: user?.uid || wallet.publicKey.toBase58(),
+        organizerWallet: wallet.publicKey.toBase58(),
         organizerName: user?.displayName || "Anonymous",
+        challengePda: challengeId,
         createdAt: Date.now(),
         startTs: now,
         endTs: now + duration,
         maxParticipants: Number(maxParticipants || "10"),
+        stakeAmount: stakeValue, // Store stake amount in SOL
         type: "10-spot-competition",
         status: "active",
+        onChain: true, // Mark as on-chain challenge
       });
 
       setTxStatus({
         type: "success",
         message:
-          "Challenge created successfully! First to capture all 10 spots wins!",
+          "Challenge created successfully on-chain! First to capture all 10 spots wins!",
       });
       setShowChallengeModal(false);
       setChallengeForCheckpoint(null);
       setDurationHours("24");
       setMaxParticipants("10");
       setChallengeTitle("");
+      setStakeSol("0.1");
+
+      // Refresh challenges
+      await refreshChallenges();
+
       // Refresh daily count after creating
       if (user) {
         const newCount = await checkDailyChallengeLimit();
         setDailyChallengeCount(newCount);
       }
-
-      // Refresh challenges list by triggering a re-fetch
-      // The challenges listener will pick up the new challenge
     } catch (e: any) {
       console.error("Challenge creation error:", e);
       setTxStatus({
         type: "error",
-        message: e?.message || "Failed to create challenge",
+        message: e?.message || "Failed to create challenge on-chain",
       });
     } finally {
       setCreatingChallenge(false);
@@ -1276,6 +1325,11 @@ export default function MapPage() {
                         </div>
                         <p className="text-xs text-slate-400 mb-2">
                           by {challenge.organizerName || "Anonymous"}
+                          {(challenge as any).stakeAmount > 0 && (
+                            <span className="ml-2 text-emerald-400">
+                              • {(challenge as any).stakeAmount} SOL stake
+                            </span>
+                          )}
                         </p>
                         <div className="text-xs text-slate-300 space-y-1">
                           <p>
@@ -1687,12 +1741,14 @@ export default function MapPage() {
           <div className="bg-slate-900 rounded-2xl border border-slate-700 p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-50">
-                Create 10-Spot Challenge
+                Create 10-Spot Challenge (On-Chain)
               </h2>
               <button
                 onClick={() => {
                   setShowChallengeModal(false);
                   setSelectedSpots([]);
+                  setChallengeTitle("");
+                  setStakeSol("0.1");
                 }}
                 className="text-slate-400 hover:text-slate-200"
               >
@@ -1700,38 +1756,15 @@ export default function MapPage() {
               </button>
             </div>
 
-            <div className="mb-4">
-              <p className="text-sm text-slate-300 mb-2">
-                🎲 10 random spots will be automatically selected from nearby
-                checkpoints. First person to capture all 10 wins!
-              </p>
-              <p className="text-xs text-slate-400">
-                {checkpointsState.status === "ready"
-                  ? `${checkpointsState.data.length} nearby checkpoints available`
-                  : "Loading checkpoints..."}
-              </p>
-            </div>
-
-            {txStatus && (
-              <div
-                className={`mb-4 rounded-lg border p-3 text-xs ${
-                  txStatus.type === "success"
-                    ? "bg-emerald-950/30 border-emerald-800/50 text-emerald-300"
-                    : "bg-red-950/30 border-red-800/50 text-red-300"
-                }`}
-              >
-                {txStatus.message}
-              </div>
-            )}
-
             <div className="space-y-4">
+              {/* Challenge Title - First field */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-300">
+                <span className="text-xs font-medium text-slate-200">
                   Challenge Title{" "}
-                  <span className="text-slate-500">(optional)</span>
+                  <span className="text-slate-500 font-normal">(optional)</span>
                 </span>
                 <input
-                  className="rounded-md bg-slate-950/70 border border-slate-700 px-3 py-2 text-sm"
+                  className="rounded-lg bg-slate-950/70 border border-slate-700 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
                   type="text"
                   placeholder="e.g., Weekend Warrior Challenge"
                   value={challengeTitle}
@@ -1740,10 +1773,53 @@ export default function MapPage() {
                 />
               </label>
 
+              <div className="mb-2">
+                <p className="text-sm text-slate-300 mb-2">
+                  🎲 10 random spots will be automatically selected from nearby
+                  checkpoints. First person to capture all 10 wins!
+                </p>
+                <p className="text-xs text-slate-400">
+                  {checkpointsState.status === "ready"
+                    ? `${checkpointsState.data.length} nearby checkpoints available`
+                    : "Loading checkpoints..."}
+                </p>
+              </div>
+
+              {txStatus && (
+                <div
+                  className={`rounded-lg border p-3 text-xs ${
+                    txStatus.type === "success"
+                      ? "bg-emerald-950/30 border-emerald-800/50 text-emerald-300"
+                      : "bg-red-950/30 border-red-800/50 text-red-300"
+                  }`}
+                >
+                  {txStatus.message}
+                </div>
+              )}
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-slate-200">
+                  Stake Amount (SOL) <span className="text-red-400">*</span>
+                </span>
+                <input
+                  className="rounded-lg bg-slate-950/70 border border-slate-700 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  placeholder="0.1"
+                  value={stakeSol}
+                  onChange={(e) => setStakeSol(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Amount each participant needs to stake to join (required)
+                </p>
+              </label>
+
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-300">Duration (hours)</span>
                 <input
-                  className="rounded-md bg-slate-950/70 border border-slate-700 px-3 py-2 text-sm"
+                  className="rounded-lg bg-slate-950/70 border border-slate-700 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
                   type="number"
                   min="1"
                   step="1"
@@ -1755,7 +1831,7 @@ export default function MapPage() {
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-300">Max Participants</span>
                 <input
-                  className="rounded-md bg-slate-950/70 border border-slate-700 px-3 py-2 text-sm"
+                  className="rounded-lg bg-slate-950/70 border border-slate-700 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
                   type="number"
                   min="1"
                   max="50"
@@ -1769,9 +1845,13 @@ export default function MapPage() {
                 onClick={handleCreateChallenge}
                 disabled={
                   creatingChallenge ||
+                  !wallet.connected ||
+                  !wallet.publicKey ||
                   checkpointsState.status !== "ready" ||
                   checkpointsState.data.length < 10 ||
-                  (dailyChallengeCount !== null && dailyChallengeCount >= 2)
+                  (dailyChallengeCount !== null && dailyChallengeCount >= 2) ||
+                  !stakeSol ||
+                  Number(stakeSol) <= 0
                 }
                 className="w-full rounded-full bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:bg-slate-700 disabled:text-slate-400"
               >

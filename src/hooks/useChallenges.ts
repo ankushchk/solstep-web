@@ -25,6 +25,18 @@ export function useChallenges() {
   const { program, error: programError } = useAnchorProgram();
   const wallet = useWallet();
 
+  // Log program status for debugging
+  useEffect(() => {
+    if (wallet.connected) {
+      console.log("useChallenges - Program status:", {
+        hasProgram: !!program,
+        programError,
+        walletConnected: wallet.connected,
+        hasPublicKey: !!wallet.publicKey,
+      });
+    }
+  }, [program, programError, wallet.connected, wallet.publicKey]);
+
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [challenges, setChallenges] = useState<ChallengeAccount[]>([]);
@@ -37,17 +49,47 @@ export function useChallenges() {
     setStatus("loading");
     setError(null);
     try {
-      const accounts = await program.account.challenge.all();
-      const parsed: ChallengeAccount[] = accounts.map((a) => ({
+      // Try both lowercase and capitalized account names (Anchor converts types to lowercase)
+      // The IDL has "Challenge" in types but Anchor accesses it as lowercase
+      // Use type assertion to bypass TypeScript checking since IDL is dynamic
+      let accounts;
+      try {
+        accounts = await (program.account as any).challenge.all();
+      } catch (e) {
+        // Fallback to capitalized if lowercase doesn't work
+        console.warn(
+          "Failed to access challenge account (lowercase), trying capitalized:",
+          e
+        );
+        accounts = await (program.account as any).Challenge.all();
+      }
+      const parsed: ChallengeAccount[] = accounts.map((a: any) => ({
         publicKey: a.publicKey,
         organizer: a.account.organizer,
-        stakeAmount: BigInt(a.account.stakeAmount.toString()),
-        startTs: BigInt(a.account.startTs.toString()),
-        endTs: BigInt(a.account.endTs.toString()),
-        maxParticipants: a.account.maxParticipants,
-        participantCount: a.account.participantCount,
-        totalStake: BigInt(a.account.totalStake.toString()),
-        isFinalized: a.account.isFinalized,
+        stakeAmount: BigInt(
+          a.account.stake_amount?.toString() ||
+            a.account.stakeAmount?.toString() ||
+            "0"
+        ),
+        startTs: BigInt(
+          a.account.start_ts?.toString() || a.account.startTs?.toString() || "0"
+        ),
+        endTs: BigInt(
+          a.account.end_ts?.toString() || a.account.endTs?.toString() || "0"
+        ),
+        maxParticipants:
+          a.account.max_participants || a.account.maxParticipants || 0,
+        participantCount:
+          a.account.participant_count || a.account.participantCount || 0,
+        totalStake: BigInt(
+          a.account.total_stake?.toString() ||
+            a.account.totalStake?.toString() ||
+            "0"
+        ),
+        isFinalized:
+          a.account.is_finalized !== undefined
+            ? a.account.is_finalized
+            : a.account.isFinalized || false,
         participants: a.account.participants
           ? a.account.participants
               .filter((p: any) => {
@@ -106,9 +148,14 @@ export function useChallenges() {
       }
 
       if (!program) {
-        throw new Error(
-          "Solana program not initialized. Please ensure your wallet is connected and try again."
-        );
+        const errorMsg = programError
+          ? `Solana program not initialized: ${programError}. Please ensure your wallet is connected and try again.`
+          : "Solana program not initialized. Please ensure your wallet is connected and try again.";
+        console.error("Program not available:", {
+          programError,
+          walletConnected: wallet.connected,
+        });
+        throw new Error(errorMsg);
       }
 
       const [challengePda] = PublicKey.findProgramAddressSync(
@@ -126,6 +173,7 @@ export function useChallenges() {
         .accounts({
           organizer: wallet.publicKey,
           challenge: challengePda,
+          systemProgram: new PublicKey("11111111111111111111111111111111"),
         })
         .rpc();
 
@@ -160,6 +208,7 @@ export function useChallenges() {
           organizer: wallet.publicKey,
           challenge: challengePubkey,
           escrow: escrowPda,
+          systemProgram: new PublicKey("11111111111111111111111111111111"),
         })
         .rpc();
 
@@ -194,6 +243,7 @@ export function useChallenges() {
           participant: wallet.publicKey,
           challenge: challengePubkey,
           escrow: escrowPda,
+          systemProgram: new PublicKey("11111111111111111111111111111111"),
         })
         .rpc();
 
@@ -255,10 +305,10 @@ export function useChallenges() {
       await program.methods
         .payoutWinner(params.shareAmountLamports)
         .accounts({
-          organizer: wallet.publicKey,
           winner: params.winner,
           challenge: params.challengePubkey,
           escrow: escrowPda,
+          systemProgram: new PublicKey("11111111111111111111111111111111"),
         })
         .rpc();
 

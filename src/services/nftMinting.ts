@@ -25,6 +25,7 @@ export async function mintNFT(
   return "NFT_MINTING_DISABLED";
   
   /* Original implementation - commented out until wallet adapter integration is fixed
+  
   import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
   import {
     createGenericFileFromBrowserFile,
@@ -91,46 +92,5 @@ export async function mintNFT(
 
   return mint.publicKey;
   */
-
-  // Convert image data URL to blob
-  const response = await fetch(params.imageDataUrl);
-  const blob = await response.blob();
-  const file = new File([blob], `${params.checkpointId}.jpg`, {
-    type: "image/jpeg",
-  });
-
-  // Upload image
-  const imageFile = await createGenericFileFromBrowserFile(file);
-  const [imageUri] = await umi.uploader.upload([imageFile]);
-
-  // Create metadata
-  const metadata: UploadMetadataInput = {
-    name: params.name,
-    description: params.description,
-    image: imageUri,
-    attributes: [
-      { trait_type: "Checkpoint", value: params.checkpointName },
-      { trait_type: "Checkpoint ID", value: params.checkpointId },
-      { trait_type: "Location", value: `${params.location.lat}, ${params.location.lng}` },
-      { trait_type: "Verified Location", value: `${params.verifiedLocation.lat}, ${params.verifiedLocation.lng}` },
-      ...(params.attributes || []),
-    ],
-  };
-
-  // Upload metadata
-  const [metadataUri] = await umi.uploader.upload([metadata]);
-
-  // Generate mint signer
-  const mint = generateSigner(umi);
-
-  // Mint NFT
-  await createNft(umi, {
-    mint,
-    name: params.name,
-    uri: metadataUri,
-    sellerFeeBasisPoints: 0, // No royalties
-  }).sendAndConfirm(umi);
-
-  return mint.publicKey;
 }
 

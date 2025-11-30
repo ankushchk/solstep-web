@@ -28,7 +28,7 @@ export function useGeolocation(enableWatch: boolean = true) {
 
     let watchId: number | null = null;
 
-    setState((prev) => ({ ...prev, status: "locating" }));
+    setState((prev) => ({ ...prev, status: "locating", position: null, error: null }));
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -54,7 +54,7 @@ export function useGeolocation(enableWatch: boolean = true) {
                 error: err.message,
               }));
             },
-            { enableHighAccuracy: true, distanceFilter: 5 },
+            { enableHighAccuracy: true },
           );
         }
       },

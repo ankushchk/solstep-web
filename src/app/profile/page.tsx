@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAvatarCollection } from "@/hooks/useAvatarCollection";
@@ -12,7 +12,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
 
-export default function ProfilePage() {
+function ProfilePageContent() {
   const { user, signOut } = useAuth();
   const { profile } = useUserProfile(user);
   const wallet = useWallet();
@@ -338,6 +338,14 @@ export default function ProfilePage() {
         )}
       </section>
     </main>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-50">Loading...</div>}>
+      <ProfilePageContent />
+    </Suspense>
   );
 }
 

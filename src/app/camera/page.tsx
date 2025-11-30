@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Webcam from "react-webcam";
 
@@ -28,7 +28,7 @@ const videoConstraints = {
 
 const LOCATION_VERIFICATION_RADIUS_METERS = 100; // 100 meters tolerance (matches map page)
 
-export default function CameraPage() {
+function CameraPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { addAvatar, avatars } = useAvatarCollection();
@@ -486,5 +486,13 @@ export default function CameraPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function CameraPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-50">Loading...</div>}>
+      <CameraPageContent />
+    </Suspense>
   );
 }
