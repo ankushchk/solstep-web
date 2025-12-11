@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import "@solana/wallet-adapter-react-ui/styles.css";
 import { SolanaProviders } from "@/components/SolanaProviders";
+import { ReactQueryProvider } from "@/components/ReactQueryProvider";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Toaster } from "react-hot-toast";
 
 // Polyfill Buffer for browser
 if (typeof window !== "undefined") {
@@ -48,7 +50,35 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <SolanaProviders>{children}</SolanaProviders>
+        <ErrorBoundary>
+          <ReactQueryProvider>
+            <SolanaProviders>{children}</SolanaProviders>
+          </ReactQueryProvider>
+        </ErrorBoundary>
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: "#1e293b",
+              color: "#f1f5f9",
+              border: "1px solid #334155",
+              borderRadius: "0.5rem",
+            },
+            success: {
+              iconTheme: {
+                primary: "#10b981",
+                secondary: "#f1f5f9",
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: "#ef4444",
+                secondary: "#f1f5f9",
+              },
+            },
+          }}
+        />
       </body>
     </html>
   );

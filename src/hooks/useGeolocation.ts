@@ -28,7 +28,12 @@ export function useGeolocation(enableWatch: boolean = true) {
 
     let watchId: number | null = null;
 
-    setState((prev) => ({ ...prev, status: "locating", position: null, error: null }));
+    setState((prev) => ({
+      ...prev,
+      status: "locating",
+      position: null,
+      error: null,
+    }));
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -48,24 +53,48 @@ export function useGeolocation(enableWatch: boolean = true) {
               setState({ status: "ready", position: next, error: null });
             },
             (err) => {
+              // Provide more user-friendly error messages
+              let errorMessage =
+                "Position update is unavailable. Please enable location services.";
+              if (err.code === err.PERMISSION_DENIED) {
+                errorMessage =
+                  "Location permission denied. Please enable location access in your browser settings.";
+              } else if (err.code === err.POSITION_UNAVAILABLE) {
+                errorMessage =
+                  "Location unavailable. Please check your device's location settings.";
+              } else if (err.code === err.TIMEOUT) {
+                errorMessage = "Location request timed out. Please try again.";
+              }
               setState((prev) => ({
                 ...prev,
                 status: "error",
-                error: err.message,
+                error: errorMessage,
               }));
             },
-            { enableHighAccuracy: true },
+            { enableHighAccuracy: true }
           );
         }
       },
       (err) => {
+        // Provide more user-friendly error messages
+        let errorMessage =
+          "Unable to get your location. Please enable location services.";
+        if (err.code === err.PERMISSION_DENIED) {
+          errorMessage =
+            "Location permission denied. Please enable location access in your browser settings.";
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          errorMessage =
+            "Location unavailable. Please check your device's location settings.";
+        } else if (err.code === err.TIMEOUT) {
+          errorMessage = "Location request timed out. Please try again.";
+        }
         setState({
           status: "error",
           position: null,
-          error: err.message,
+          error: errorMessage,
         });
       },
-      { enableHighAccuracy: true, timeout: 15000 },
+      { enableHighAccuracy: true, timeout: 15000 }
     );
 
     return () => {
@@ -77,5 +106,3 @@ export function useGeolocation(enableWatch: boolean = true) {
 
   return state;
 }
-
-

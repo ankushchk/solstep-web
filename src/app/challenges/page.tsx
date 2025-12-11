@@ -1,18 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { useChallenges } from "@/hooks/useChallenges";
-
-// Dynamically import WalletMultiButton to avoid SSR hydration issues
-const WalletMultiButton = dynamic(
-  async () =>
-    (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
-  { ssr: false }
-);
+import { useSolana } from "@/hooks/useSolana";
+import {
+  useChallenges,
+  useCreateChallenge,
+  useInitEscrow,
+  useJoinChallenge,
+  useFinalizeChallenge,
+} from "@/hooks/useChallenges";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 function formatLamports(lamports: bigint) {
   return Number(lamports) / LAMPORTS_PER_SOL;
@@ -35,26 +34,18 @@ function getTimeRemaining(endTs: bigint): string {
 }
 
 export default function ChallengesPage() {
-  const wallet = useWallet();
-  const {
-    status,
-    error,
-    challenges,
-    createChallenge,
-    initEscrow,
-    joinChallenge,
-    finalizeChallenge,
-    payoutWinner: payoutWinnerFn,
-  } = useChallenges();
+  const { wallet, publicKey } = useSolana();
+  const { data: challenges = [], isLoading, error } = useChallenges();
+  const createChallengeMutation = useCreateChallenge();
+  const initEscrowMutation = useInitEscrow();
+  const joinChallengeMutation = useJoinChallenge();
+  const finalizeChallengeMutation = useFinalizeChallenge();
 
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [finalizingId, setFinalizingId] = useState<string | null>(null);
-  const [payoutingId, setPayoutingId] = useState<string | null>(null);
   const [selectedChallenge, setSelectedChallenge] = useState<PublicKey | null>(null);
   const [txStatus, setTxStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [payoutWinner, setPayoutWinner] = useState("");
-  const [payoutAmount, setPayoutAmount] = useState("");
 
   const [stakeSol, setStakeSol] = useState("0.1");
   const [durationHours, setDurationHours] = useState("24");
@@ -63,7 +54,7 @@ export default function ChallengesPage() {
   const now = useMemo(() => Math.floor(Date.now() / 1000), []);
 
   const handleCreate = async () => {
-    if (!wallet.connected) return;
+    if (!publicKey) return;
     try {
       setCreating(true);
       setTxStatus(null);
@@ -72,14 +63,15 @@ export default function ChallengesPage() {
       );
       const duration = Number(durationHours || "24") * 60 * 60;
 
-      const challengePda = await createChallenge({
+      const challengePda = await createChallengeMutation.mutateAsync({
+        title: "SolStep Challenge",
         stakeAmountLamports,
         startTs: now,
         endTs: now + duration,
         maxParticipants: Number(maxParticipants || "10"),
       });
 
-      await initEscrow(challengePda);
+      await initEscrowMutation.mutateAsync(challengePda);
       setTxStatus({ type: "success", message: "Challenge created successfully!" });
       // Reset form
       setStakeSol("0.1");
@@ -98,7 +90,7 @@ export default function ChallengesPage() {
     try {
       setJoiningId(pubkey.toBase58());
       setTxStatus(null);
-      await joinChallenge(pubkey);
+      await joinChallengeMutation.mutateAsync(pubkey);
       setTxStatus({ type: "success", message: "Successfully joined challenge!" });
     } catch (e: any) {
       console.error(e);
@@ -113,7 +105,7 @@ export default function ChallengesPage() {
     try {
       setFinalizingId(pubkey.toBase58());
       setTxStatus(null);
-      await finalizeChallenge(pubkey);
+      await finalizeChallengeMutation.mutateAsync(pubkey);
       setTxStatus({ type: "success", message: "Challenge finalized! You can now payout winners." });
     } catch (e: any) {
       console.error(e);
@@ -124,41 +116,8 @@ export default function ChallengesPage() {
     }
   };
 
-  const handlePayoutWinner = async (challengePubkey: PublicKey) => {
-    if (!payoutWinner || !payoutAmount) {
-      setTxStatus({ type: "error", message: "Please enter winner address and amount" });
-      return;
-    }
-    try {
-      setPayoutingId(challengePubkey.toBase58());
-      setTxStatus(null);
-      let winnerPubkey: PublicKey;
-      try {
-        winnerPubkey = new PublicKey(payoutWinner);
-      } catch {
-        setTxStatus({ type: "error", message: "Invalid winner address" });
-        return;
-      }
-      const shareAmountLamports = BigInt(
-        Math.floor(Number(payoutAmount || "0") * LAMPORTS_PER_SOL),
-      );
-      await payoutWinnerFn({
-        challengePubkey,
-        winner: winnerPubkey,
-        shareAmountLamports,
-      });
-      setTxStatus({ type: "success", message: `Payout of ${payoutAmount} SOL sent to winner!` });
-      setPayoutWinner("");
-      setPayoutAmount("");
-      setSelectedChallenge(null);
-    } catch (e: any) {
-      console.error(e);
-      const errorMsg = e?.message || e?.toString() || "Failed to payout winner";
-      setTxStatus({ type: "error", message: errorMsg });
-    } finally {
-      setPayoutingId(null);
-    }
-  };
+  // Payout / settlement is now handled on-chain via settle_challenge / timeout_challenge.
+  // This page currently only exposes create / join / finalize operations.
 
   return (
     <main className="min-h-screen flex flex-col bg-slate-950 text-slate-50">
@@ -179,7 +138,7 @@ export default function ChallengesPage() {
             >
               Home
             </Link>
-            <WalletMultiButton className="!bg-emerald-600 !text-xs !py-1.5" />
+            <WalletMultiButton />
           </div>
         </div>
       </header>
@@ -201,7 +160,7 @@ export default function ChallengesPage() {
         {/* Create challenge form */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 space-y-3">
           <h2 className="text-sm font-semibold">Create a new challenge</h2>
-          {!wallet.connected && (
+          {!publicKey && (
             <p className="text-xs text-slate-400">
               Connect your wallet to create and manage challenges.
             </p>
@@ -243,7 +202,7 @@ export default function ChallengesPage() {
           </div>
           <button
             type="button"
-            disabled={!wallet.connected || creating}
+            disabled={!publicKey || creating}
             onClick={handleCreate}
             className="mt-1 inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 disabled:bg-slate-700 disabled:text-slate-400"
           >
@@ -263,7 +222,7 @@ export default function ChallengesPage() {
           </div>
           {error && (
             <p className="text-xs text-red-400">
-              Failed to load challenges: {error}
+              Failed to load challenges: {error instanceof Error ? error.message : String(error)}
             </p>
           )}
           {challenges.length === 0 && !error && (
@@ -274,12 +233,21 @@ export default function ChallengesPage() {
           <div className="space-y-3">
             {challenges.map((c) => {
               const isOrganizer =
-                wallet.publicKey &&
-                wallet.publicKey.equals(c.organizer);
+                publicKey &&
+                (() => {
+                  const orgAddress = c.organizer instanceof PublicKey
+                    ? c.organizer.toBase58()
+                    : (typeof c.organizer === "string"
+                      ? c.organizer
+                      : (c.organizer && typeof c.organizer === "object" && "toBase58" in c.organizer
+                        ? (c.organizer as { toBase58: () => string }).toBase58()
+                        : ""));
+                  return publicKey.toBase58() === orgAddress;
+                })();
               const isFull =
                 c.participantCount >= c.maxParticipants;
               const isSelected = selectedChallenge?.equals(c.publicKey);
-              const canJoin = wallet.connected && !isOrganizer && !isFull && !c.isFinalized;
+              const canJoin = publicKey && !isOrganizer && !isFull && !c.isFinalized;
               const isEnded = Number(c.endTs) < Math.floor(Date.now() / 1000);
 
               return (
@@ -376,49 +344,15 @@ export default function ChallengesPage() {
                     </div>
                   </div>
 
-                  {/* Payout Winner Form */}
+                  {/* Payout is now handled on-chain via settle_challenge instruction */}
                   {isSelected && isOrganizer && c.isFinalized && (
-                    <div className="mt-2 pt-3 border-t border-slate-700/50 space-y-2">
-                      <p className="text-[0.7rem] font-semibold text-slate-300">Payout Winner</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[0.65rem] text-slate-400">Winner Address</span>
-                          <input
-                            className="rounded-md bg-slate-950/70 border border-slate-700 px-2 py-1.5 text-[0.7rem] font-mono"
-                            type="text"
-                            placeholder="Winner wallet address"
-                            value={payoutWinner}
-                            onChange={(e) => setPayoutWinner(e.target.value)}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[0.65rem] text-slate-400">Amount (SOL)</span>
-                          <input
-                            className="rounded-md bg-slate-950/70 border border-slate-700 px-2 py-1.5 text-[0.7rem]"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0.0"
-                            value={payoutAmount}
-                            onChange={(e) => setPayoutAmount(e.target.value)}
-                          />
-                        </label>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={!payoutWinner || !payoutAmount || payoutingId === c.publicKey.toBase58()}
-                          onClick={() => handlePayoutWinner(c.publicKey)}
-                          className="px-3 py-1.5 rounded-full bg-purple-600 text-white text-[0.7rem] font-medium disabled:opacity-50"
-                        >
-                          {payoutingId === c.publicKey.toBase58()
-                            ? "Processing..."
-                            : "Send Payout"}
-                        </button>
-                        <p className="text-[0.65rem] text-slate-500 self-center">
-                          Total pool: {formatLamports(c.totalStake)} SOL
-                        </p>
-                      </div>
+                    <div className="mt-2 pt-3 border-t border-slate-700/50">
+                      <p className="text-[0.7rem] text-slate-400">
+                        Challenge finalized. Use settle_challenge to distribute rewards on-chain.
+                      </p>
+                      <p className="text-[0.65rem] text-slate-500 mt-1">
+                        Total pool: {formatLamports(c.totalStake)} SOL
+                      </p>
                     </div>
                   )}
                 </article>

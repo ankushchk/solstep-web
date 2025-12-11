@@ -7,7 +7,8 @@ import { useAvatarCollection } from "@/hooks/useAvatarCollection";
 import { computeStatsFromAvatars } from "@/utils/stats";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useSolana } from "@/hooks/useSolana";
+import { NFTCard } from "@/components/NFTCard";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
@@ -15,7 +16,7 @@ import { auth } from "@/lib/firebase";
 function ProfilePageContent() {
   const { user, signOut } = useAuth();
   const { profile } = useUserProfile(user);
-  const wallet = useWallet();
+  const { publicKey } = useSolana();
   const { avatars } = useAvatarCollection();
   const stats = computeStatsFromAvatars(avatars);
   const searchParams = useSearchParams();
@@ -59,10 +60,10 @@ function ProfilePageContent() {
   }, [searchParams, user]);
 
   const handleLinkWallet = async () => {
-    if (!user || !wallet.publicKey) return;
+    if (!user || !publicKey) return;
     const ref = doc(db, "users", user.uid);
     await updateDoc(ref, {
-      walletAddress: wallet.publicKey.toBase58(),
+      walletAddress: publicKey.toBase58(),
     });
   };
 
@@ -101,6 +102,18 @@ function ProfilePageContent() {
         return;
       }
       
+      // Show warnings if any metrics failed
+      if (data.warnings) {
+        const warningMessages = Object.entries(data.warnings)
+          .map(([metric, message]) => `${metric}: ${message}`)
+          .join(", ");
+        console.warn("Google Fit sync warnings:", warningMessages);
+        // Optionally show warning to user (non-blocking)
+        if (data.warnings.steps) {
+          setSyncError(`Warning: ${data.warnings.steps}. Other data synced successfully.`);
+        }
+      }
+      
       // Update Firestore with synced data
       const ref = doc(db, "users", user.uid);
       await updateDoc(ref, {
@@ -108,11 +121,11 @@ function ProfilePageContent() {
           ...profile.googleFit,
           ...(data.updatedTokens || {}),
           lastSyncedAt: Date.now(),
-          totalSteps: data.steps,
-          totalDistanceMeters: data.distanceMeters,
-          totalCalories: data.calories,
-          activeMinutes: data.activeMinutes,
-          averageHeartRate: data.averageHeartRate,
+          totalSteps: data.steps || 0,
+          totalDistanceMeters: data.distanceMeters || 0,
+          totalCalories: data.calories || 0,
+          activeMinutes: data.activeMinutes || 0,
+          averageHeartRate: data.averageHeartRate || null,
         },
       });
     } catch (error: any) {
@@ -182,7 +195,7 @@ function ProfilePageContent() {
             <button
               type="button"
               onClick={handleLinkWallet}
-              disabled={!wallet.publicKey}
+              disabled={!publicKey}
               className="text-[0.7rem] px-3 py-1.5 rounded-full border border-emerald-500 text-emerald-300 disabled:border-slate-600 disabled:text-slate-500"
             >
               {profile?.walletAddress ? "Update" : "Link"}
@@ -303,6 +316,36 @@ function ProfilePageContent() {
             </p>
           </div>
         </div>
+
+        {/* NFT Collection Section */}
+        {avatars.filter((avatar) => avatar.nftMintAddress).length > 0 && (
+          <div className="rounded-2xl bg-slate-900/70 border border-slate-700 px-3 py-3 mt-3">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-[0.7rem] uppercase tracking-wide text-slate-400">
+                  🎨 NFT Collection
+                </p>
+                <p className="mt-1 text-[0.75rem] text-slate-200">
+                  Your on-chain checkpoint proofs
+                </p>
+              </div>
+              <span className="text-xs px-2 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                {avatars.filter((avatar) => avatar.nftMintAddress).length} NFTs
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {avatars
+                .filter((avatar) => avatar.nftMintAddress)
+                .map((avatar) => (
+                  <NFTCard
+                    key={avatar.id}
+                    avatar={avatar}
+                    mintAddress={avatar.nftMintAddress!}
+                  />
+                ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="flex-1 px-4 pb-6 max-w-md mx-auto w-full">

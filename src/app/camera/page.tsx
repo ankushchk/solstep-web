@@ -8,6 +8,9 @@ import { useAvatarCollection } from "@/hooks/useAvatarCollection";
 import type { LatLng } from "@/utils/types";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useSolana } from "@/hooks/useSolana";
+import { useNFTMinting } from "@/hooks/useNFTMinting";
+import toast from "react-hot-toast";
 import {
   collection,
   query,
@@ -34,6 +37,8 @@ function CameraPageContent() {
   const { addAvatar, avatars } = useAvatarCollection();
   const webcamRef = useRef<Webcam | null>(null);
   const { user } = useAuth();
+  const { publicKey } = useSolana();
+  const { mintNFT, isMinting, progress: mintProgress } = useNFTMinting();
   const { position: currentPosition, status: geoStatus } = useGeolocation(true);
 
   const [isCapturing, setIsCapturing] = useState(false);
@@ -45,6 +50,8 @@ function CameraPageContent() {
   const [distanceFromCheckpoint, setDistanceFromCheckpoint] = useState<
     number | null
   >(null);
+  const [shouldMintNFT, setShouldMintNFT] = useState(false);
+  const [nftMintAddress, setNftMintAddress] = useState<string | null>(null);
 
   const checkpointId = searchParams.get("checkpointId") ?? "unknown";
   const checkpointName =
@@ -99,12 +106,6 @@ function CameraPageContent() {
   }, [currentPosition, checkpointLocation, geoStatus]);
 
   const handleCapture = useCallback(() => {
-    console.log("handleCapture called", {
-      isAtCheckpoint,
-      hasWebcamRef: !!webcamRef.current,
-      geoStatus,
-    });
-
     if (!isAtCheckpoint) {
       const errorMsg = `You must be within ${LOCATION_VERIFICATION_RADIUS_METERS}m of the checkpoint to capture.`;
       console.warn("Capture blocked:", errorMsg);
@@ -120,7 +121,6 @@ function CameraPageContent() {
 
     try {
       setIsCapturing(true);
-      console.log("Taking screenshot...");
       const screenshot = webcamRef.current.getScreenshot();
       
       if (!screenshot) {
@@ -130,7 +130,6 @@ function CameraPageContent() {
         return;
       }
 
-      console.log("Screenshot captured successfully, length:", screenshot.length);
       setPreview(screenshot);
       setError(null);
       setIsCapturing(false);
@@ -142,9 +141,6 @@ function CameraPageContent() {
   }, [isAtCheckpoint, LOCATION_VERIFICATION_RADIUS_METERS]);
 
   const handleSave = async () => {
-    console.log("handleSave called", {
-      hasPreview: !!preview,
-      hasCheckpointLocation: !!checkpointLocation,
       hasUser: !!user,
       isAlreadyCollected,
       currentPosition,
@@ -169,7 +165,6 @@ function CameraPageContent() {
     }
 
     if (isAlreadyCollected) {
-      console.log("Already collected, redirecting to map");
       router.push("/map");
       return;
     }
@@ -196,8 +191,6 @@ function CameraPageContent() {
       LOCATION_VERIFICATION_RADIUS_METERS
     );
 
-    console.log("Location check:", {
-      currentPosition,
       checkpointLocation,
       isAtLocation,
       actualDistanceMeters: Math.round(actualDistance),
@@ -213,8 +206,6 @@ function CameraPageContent() {
       return;
     }
 
-    console.log("Location verification passed! Proceeding to save...");
-
     setIsVerifying(false);
 
     // Save avatar (no wallet/NFT required)
@@ -222,27 +213,91 @@ function CameraPageContent() {
     setError(null);
 
     try {
-      console.log("Saving avatar...", {
-        checkpointId,
-        checkpointName,
-        hasUser: !!user,
-        hasPreview: !!preview,
-        location: checkpointLocation,
-      });
 
       if (!preview) {
         throw new Error("No preview image available");
       }
 
-      // Wait for avatar to be saved
+      // Save avatar first
+      let mintAddress: string | undefined = undefined;
+
+      // Mint NFT if requested and wallet is connected
+      if (shouldMintNFT && publicKey) {
+        try {
+          mintAddress = await mintNFT({
+            imageDataUrl: preview,
+            checkpointId,
+            checkpointName,
+            location: checkpointLocation,
+            verifiedLocation: currentPosition,
+            collectedAt: new Date().toISOString(),
+            userId: user.uid,
+          });
+
+          setNftMintAddress(mintAddress);
+          
+          toast.success(
+            <div>
+              <div>NFT minted successfully!</div>
+              {mintAddress && (
+                <a
+                  href={`https://solscan.io/token/${mintAddress}?cluster=devnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs underline mt-1 block"
+                >
+                  View on Solscan →
+                </a>
+              )}
+            </div>,
+            {
+              icon: "🎨",
+              duration: 5000,
+            }
+          );
+        } catch (nftError: any) {
+          console.error("NFT minting error:", nftError);
+          // Don't block avatar save if NFT minting fails
+          toast.error(
+            nftError?.message || "NFT minting failed, but avatar was saved.",
+            { icon: "⚠️", duration: 4000 }
+          );
+        }
+      }
+
+      // Wait for avatar to be saved (with or without NFT)
       await addAvatar({
         checkpointId,
         checkpointName,
         imageDataUrl: preview,
         location: checkpointLocation,
+        mintAddress,
       });
 
-      console.log("Avatar saved successfully, updating challenges...");
+      // If NFT was minted, update the avatar document with mint address
+      if (mintAddress && user) {
+        try {
+          // Find the avatar document we just created
+          const avatarsQuery = query(
+            collection(db, "avatars"),
+            where("userId", "==", user.uid),
+            where("checkpointId", "==", checkpointId)
+          );
+          const avatarsSnap = await getDocs(avatarsQuery);
+          
+          if (!avatarsSnap.empty) {
+            // Update the most recent one (should be the one we just created)
+            const avatarDoc = avatarsSnap.docs[0];
+            await updateDoc(avatarDoc.ref, {
+              nftMintAddress: mintAddress,
+            });
+          }
+        } catch (updateError) {
+          console.error("Error updating avatar with mint address:", updateError);
+          // Non-critical error, continue
+        }
+      }
+
 
       // Check and update challenge progress (no wallet required)
       if (user) {
@@ -403,7 +458,6 @@ function CameraPageContent() {
               videoConstraints={videoConstraints}
               className="h-full w-full object-cover"
               onUserMedia={() => {
-                console.log("Webcam ready");
               }}
               onUserMediaError={(error) => {
                 console.error("Webcam error:", error);
@@ -431,7 +485,6 @@ function CameraPageContent() {
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                console.log("Capture button clicked");
                 handleCapture();
               }}
               disabled={isCapturing || !isAtCheckpoint || geoStatus !== "ready"}
@@ -446,33 +499,67 @@ function CameraPageContent() {
                 : "Capture Avatar"}
             </button>
           ) : (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setPreview(null)}
-                className="flex-1 rounded-full border border-slate-700 py-3 text-[0.85rem] font-medium text-slate-100 bg-slate-900/60"
-              >
-                Retake
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  console.log("Save button clicked");
-                  handleSave().catch((err) => {
-                    console.error("Unhandled error in handleSave:", err);
-                    setError(err?.message || "An unexpected error occurred");
-                  });
-                }}
-                disabled={isVerifying || isSaving}
-                className="flex-1 rounded-full bg-emerald-500 py-3 text-[0.85rem] font-semibold text-slate-950 shadow-lg shadow-emerald-500/30 active:scale-[0.99] disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
-              >
-                {isVerifying
-                  ? "Verifying Location..."
-                  : isSaving
-                  ? "Saving..."
-                  : "Save Avatar"}
-              </button>
+            <div className="space-y-3">
+              {/* NFT Minting Option */}
+              {publicKey && (
+                <div className="flex items-center gap-2 p-3 bg-purple-950/20 border border-purple-700/50 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="mintNFT"
+                    checked={shouldMintNFT}
+                    onChange={(e) => setShouldMintNFT(e.target.checked)}
+                    disabled={isSaving || isMinting}
+                    className="w-4 h-4 rounded border-purple-500 text-purple-600 focus:ring-purple-500 focus:ring-2"
+                  />
+                  <label 
+                    htmlFor="mintNFT" 
+                    className="text-xs text-slate-300 cursor-pointer flex-1"
+                  >
+                    🎨 Mint as Compressed NFT (Almost Free!)
+                    <span className="block text-[0.7rem] text-slate-400 mt-0.5">
+                      Create an on-chain proof (~0.00001 SOL)
+                    </span>
+                  </label>
+                </div>
+              )}
+              
+              {!publicKey && (
+                <div className="p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+                  <p className="text-xs text-slate-400">
+                    💡 Connect your Solana wallet to mint NFT proof
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPreview(null)}
+                  className="flex-1 rounded-full border border-slate-700 py-3 text-[0.85rem] font-medium text-slate-100 bg-slate-900/60"
+                >
+                  Retake
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSave().catch((err) => {
+                      console.error("Unhandled error in handleSave:", err);
+                      setError(err?.message || "An unexpected error occurred");
+                    });
+                  }}
+                  disabled={isVerifying || isSaving || isMinting}
+                  className="flex-1 rounded-full bg-emerald-500 py-3 text-[0.85rem] font-semibold text-slate-950 shadow-lg shadow-emerald-500/30 active:scale-[0.99] disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
+                >
+                  {isVerifying
+                    ? "Verifying Location..."
+                    : isMinting
+                    ? "Minting NFT..."
+                    : isSaving
+                    ? "Saving..."
+                    : "Save Avatar"}
+                </button>
+              </div>
             </div>
           )}
 
