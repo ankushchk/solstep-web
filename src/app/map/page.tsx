@@ -18,7 +18,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { QRCodeSVG } from "qrcode.react";
 import dynamic from "next/dynamic";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
-import { formatDistance, isWithinRadius } from "@/utils/location";
+import {
+  formatDistance,
+  isWithinRadius,
+  distanceBetween,
+} from "@/utils/location";
 import type { Checkpoint } from "@/utils/types";
 import {
   collection,
@@ -116,6 +120,45 @@ type ChallengeWithProgress = ChallengeAccount & {
 // Helper function to get challenge ID
 function getChallengeId(challenge: ChallengeWithProgress | any): string {
   return challenge.id || challenge.publicKey?.toBase58() || "";
+}
+
+// Minimum spacing between auto-selected challenge spots (in meters)
+const MIN_SPOT_DISTANCE_CANDIDATES = [200, 150, 100];
+
+// Helper to select checkpoints that are at least minDistanceMeters apart
+function selectSpacedCheckpoints(
+  checkpoints: Checkpoint[],
+  requiredCount: number,
+  minDistanceMeters: number
+): Checkpoint[] {
+  if (checkpoints.length === 0) return [];
+
+  // Shuffle defensively so selection feels random
+  const shuffled = [...checkpoints].sort(() => Math.random() - 0.5);
+  const selected: Checkpoint[] = [];
+
+  for (const candidate of shuffled) {
+    if (selected.length === 0) {
+      selected.push(candidate);
+      continue;
+    }
+
+    const tooClose = selected.some((spot) => {
+      return (
+        distanceBetween(spot.position, candidate.position) < minDistanceMeters
+      );
+    });
+
+    if (!tooClose) {
+      selected.push(candidate);
+    }
+
+    if (selected.length >= requiredCount) {
+      break;
+    }
+  }
+
+  return selected;
 }
 
 export default function MapPage() {
@@ -414,7 +457,8 @@ export default function MapPage() {
   const isAlreadyCollected = displayCheckpoint
     ? collectedCheckpointIds.has(displayCheckpoint.id)
     : false;
-  const canCollect =
+  // User is close enough to the checkpoint
+  const isInCollectionRadius =
     userPosition && displayCheckpoint && !isAlreadyCollected
       ? isWithinRadius(
           userPosition,
@@ -444,6 +488,9 @@ export default function MapPage() {
       checkpointChallenge.maxParticipants &&
     !isChallengeOrganizer &&
     !isChallengeParticipant;
+  // User can actually collect an avatar that counts toward a challenge:
+  // must be in range AND joined the checkpoint's active challenge
+  const canCollectAvatar = !!isChallengeParticipant && isInCollectionRadius;
 
   const handleRecenter = () => {
     if (mapInstance && userPosition) {
@@ -538,10 +585,27 @@ export default function MapPage() {
       return;
     }
 
-    // Randomly select 10 checkpoints
+    // Auto-select 10 checkpoints with a minimum spacing between spots
     const availableCheckpoints = [...checkpointsState.data];
-    const shuffled = availableCheckpoints.sort(() => Math.random() - 0.5);
-    const randomSpots = shuffled.slice(0, 10);
+    let randomSpots: Checkpoint[] = [];
+
+    for (const minDistance of MIN_SPOT_DISTANCE_CANDIDATES) {
+      randomSpots = selectSpacedCheckpoints(
+        availableCheckpoints,
+        10,
+        minDistance
+      );
+      if (randomSpots.length === 10) break;
+    }
+
+    if (randomSpots.length < 10) {
+      setTxStatus({
+        type: "error",
+        message:
+          "Couldn't find 10 spots that aren't all clustered together. Try moving to an area with more places nearby.",
+      });
+      return;
+    }
 
     try {
       setCreatingChallenge(true);
@@ -839,10 +903,14 @@ export default function MapPage() {
                         center={displayCheckpoint.position}
                         radius={COLLECTION_RADIUS_METERS}
                         options={{
-                          strokeColor: canCollect ? "#22c55e" : "#ef4444",
+                          strokeColor: isInCollectionRadius
+                            ? "#22c55e"
+                            : "#ef4444",
                           strokeOpacity: 0.8,
                           strokeWeight: 2,
-                          fillColor: canCollect ? "#22c55e" : "#ef4444",
+                          fillColor: isInCollectionRadius
+                            ? "#22c55e"
+                            : "#ef4444",
                           fillOpacity: 0.15,
                         }}
                       />
@@ -941,7 +1009,7 @@ export default function MapPage() {
                           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
                             Collected
                           </span>
-                        ) : canCollect ? (
+                        ) : isInCollectionRadius ? (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 animate-pulse">
                             In Range
                           </span>
@@ -991,11 +1059,25 @@ export default function MapPage() {
                             from this location.
                           </span>
                         </span>
-                      ) : canCollect ? (
+                      ) : canCollectAvatar ? (
                         <span className="flex items-center gap-2">
                           <span className="text-green-400 text-base">✓</span>
                           <span className="font-medium text-green-300">
                             Ready to collect! Open camera to capture avatar.
+                          </span>
+                        </span>
+                      ) : isInCollectionRadius && checkpointChallenge ? (
+                        <span className="flex flex-col gap-0.5">
+                          <span className="flex items-center gap-2">
+                            <span className="text-amber-400 text-base">!</span>
+                            <span className="font-medium text-amber-200">
+                              You&apos;re in range, but you need to join the
+                              active challenge above before collecting avatars.
+                            </span>
+                          </span>
+                          <span className="text-[10px] text-amber-300/80">
+                            Join the challenge, then come back to this spot to
+                            capture and have it count toward winning.
                           </span>
                         </span>
                       ) : displayCheckpoint.distanceMeters ? (
@@ -1029,20 +1111,20 @@ export default function MapPage() {
                       className={`px-5 py-2.5 rounded-full text-xs font-bold min-w-[8rem] text-center transition-all shadow-lg ${
                         isAlreadyCollected
                           ? "bg-blue-600/50 text-blue-200 cursor-not-allowed opacity-60"
-                          : canCollect
+                          : canCollectAvatar
                           ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-500 hover:to-emerald-500 shadow-green-500/30"
                           : "bg-slate-700 text-slate-400 cursor-not-allowed opacity-60"
                       }`}
-                      aria-disabled={!canCollect || isAlreadyCollected}
+                      aria-disabled={!canCollectAvatar || isAlreadyCollected}
                       onClick={(e) => {
-                        if (!canCollect || isAlreadyCollected) {
+                        if (!canCollectAvatar || isAlreadyCollected) {
                           e.preventDefault();
                         }
                       }}
                     >
                       {isAlreadyCollected
                         ? "✓ Collected"
-                        : canCollect
+                        : canCollectAvatar
                         ? "📸 Collect"
                         : "🔒 Locked"}
                     </Link>
@@ -1167,51 +1249,6 @@ export default function MapPage() {
             >
               {txStatus.message}
             </div>
-          )}
-
-          {/* Create Challenge Button - No wallet required */}
-          {user && (
-            <button
-              onClick={async () => {
-                // Check daily limit before opening modal
-                const todayCount = await checkDailyChallengeLimit();
-                setDailyChallengeCount(todayCount);
-
-                if (todayCount >= 2) {
-                  setTxStatus({
-                    type: "error",
-                    message:
-                      "You've reached the daily limit of 2 challenges. Try again tomorrow!",
-                  });
-                  return;
-                }
-
-                if (
-                  checkpointsState.status === "ready" &&
-                  checkpointsState.data.length >= 10
-                ) {
-                  setShowChallengeModal(true);
-                } else {
-                  setTxStatus({
-                    type: "error",
-                    message:
-                      "Need at least 10 nearby checkpoints to create a challenge",
-                  });
-                }
-              }}
-              disabled={
-                checkpointsState.status !== "ready" ||
-                checkpointsState.data.length < 10 ||
-                (dailyChallengeCount !== null && dailyChallengeCount >= 2)
-              }
-              className="w-full rounded-full bg-amber-500/90 text-slate-950 py-3 text-sm font-semibold hover:bg-amber-500 transition-colors disabled:bg-slate-700 disabled:text-slate-400"
-            >
-              {dailyChallengeCount !== null && dailyChallengeCount >= 2
-                ? `Daily Limit Reached (${dailyChallengeCount}/2)`
-                : dailyChallengeCount !== null
-                ? `Create Challenge (${dailyChallengeCount}/2 today)`
-                : "🎯 Create 10-Spot Challenge"}
-            </button>
           )}
 
           {!user && (

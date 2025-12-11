@@ -1,25 +1,21 @@
 "use client";
 
-import { ReactNode, useMemo } from "react";
-import {
-  ConnectionProvider,
-  WalletProvider,
-} from "@solana/wallet-adapter-react";
+import React, { ReactNode, useMemo } from "react";
+import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-  TorusWalletAdapter,
-} from "@solana/wallet-adapter-wallets";
-import { getRpcEndpoint } from "@/lib/solana";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { clusterApiUrl } from "@solana/web3.js";
+
+// Import wallet adapter CSS
+import "@solana/wallet-adapter-react-ui/styles.css";
 
 export function SolanaProviders({ children }: { children: ReactNode }) {
-  const endpoint = getRpcEndpoint("devnet");
+  // You can also provide a custom RPC endpoint
+  const endpoint = useMemo(() => clusterApiUrl("devnet"), []);
+
   const wallets = useMemo(
     () => [
       new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
-      new TorusWalletAdapter(),
     ],
     []
   );

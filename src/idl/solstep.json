@@ -9,13 +9,24 @@
   "instructions": [
     {
       "name": "close_challenge",
-      "discriminator": [29, 156, 109, 17, 41, 99, 71, 236],
+      "discriminator": [
+        29,
+        156,
+        109,
+        17,
+        41,
+        99,
+        71,
+        236
+      ],
       "accounts": [
         {
           "name": "organizer",
           "writable": true,
           "signer": true,
-          "relations": ["challenge"]
+          "relations": [
+            "challenge"
+          ]
         },
         {
           "name": "challenge",
@@ -26,12 +37,53 @@
     },
     {
       "name": "create_challenge",
-      "discriminator": [170, 244, 47, 1, 1, 15, 173, 239],
+      "discriminator": [
+        170,
+        244,
+        47,
+        1,
+        1,
+        15,
+        173,
+        239
+      ],
       "accounts": [
         {
           "name": "organizer",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "organizer_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  103,
+                  97,
+                  110,
+                  105,
+                  122,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "organizer"
+              }
+            ]
+          }
         },
         {
           "name": "challenge",
@@ -40,7 +92,17 @@
             "seeds": [
               {
                 "kind": "const",
-                "value": [99, 104, 97, 108, 108, 101, 110, 103, 101]
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
               },
               {
                 "kind": "account",
@@ -55,6 +117,10 @@
         }
       ],
       "args": [
+        {
+          "name": "title",
+          "type": "string"
+        },
         {
           "name": "stake_amount",
           "type": "u64"
@@ -75,13 +141,24 @@
     },
     {
       "name": "finalize_challenge",
-      "discriminator": [184, 38, 132, 51, 103, 143, 203, 9],
+      "discriminator": [
+        184,
+        38,
+        132,
+        51,
+        103,
+        143,
+        203,
+        9
+      ],
       "accounts": [
         {
           "name": "organizer",
           "writable": true,
           "signer": true,
-          "relations": ["challenge"]
+          "relations": [
+            "challenge"
+          ]
         },
         {
           "name": "challenge",
@@ -92,13 +169,24 @@
     },
     {
       "name": "init_escrow",
-      "discriminator": [70, 46, 40, 23, 6, 11, 81, 139],
+      "discriminator": [
+        70,
+        46,
+        40,
+        23,
+        6,
+        11,
+        81,
+        139
+      ],
       "accounts": [
         {
           "name": "organizer",
           "writable": true,
           "signer": true,
-          "relations": ["challenge"]
+          "relations": [
+            "challenge"
+          ]
         },
         {
           "name": "challenge",
@@ -106,12 +194,23 @@
         },
         {
           "name": "escrow",
+          "docs": [
+            "the PDA seeds and bump for safety and only use it as the `from` account",
+            "in `system_instruction::transfer`."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
-                "value": [101, 115, 99, 114, 111, 119]
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
               },
               {
                 "kind": "account",
@@ -129,7 +228,16 @@
     },
     {
       "name": "join_challenge",
-      "discriminator": [41, 104, 214, 73, 32, 168, 76, 79],
+      "discriminator": [
+        41,
+        104,
+        214,
+        73,
+        32,
+        168,
+        76,
+        79
+      ],
       "accounts": [
         {
           "name": "participant",
@@ -142,12 +250,22 @@
         },
         {
           "name": "escrow",
+          "docs": [
+            "and only used to hold lamports. Seeds ensure we hit the correct PDA."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
-                "value": [101, 115, 99, 114, 111, 119]
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
               },
               {
                 "kind": "account",
@@ -164,11 +282,32 @@
       "args": []
     },
     {
-      "name": "payout_winner",
-      "discriminator": [192, 241, 157, 158, 130, 150, 10, 8],
+      "name": "settle_challenge",
+      "discriminator": [
+        242,
+        58,
+        232,
+        150,
+        127,
+        199,
+        11,
+        204
+      ],
       "accounts": [
         {
+          "name": "organizer",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "challenge"
+          ]
+        },
+        {
           "name": "winner",
+          "writable": true
+        },
+        {
+          "name": "loser",
           "writable": true
         },
         {
@@ -177,12 +316,22 @@
         },
         {
           "name": "escrow",
+          "docs": [
+            "and the `challenge` relation ensure correctness."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
-                "value": [101, 115, 99, 114, 111, 119]
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
               },
               {
                 "kind": "account",
@@ -196,18 +345,93 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
+      "args": []
+    },
+    {
+      "name": "timeout_challenge",
+      "discriminator": [
+        15,
+        101,
+        245,
+        99,
+        220,
+        185,
+        252,
+        152
+      ],
+      "accounts": [
         {
-          "name": "share_amount",
-          "type": "u64"
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "docs": [
+            "tie it to this `challenge` and we only use it in transfers."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "organizer",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
-      ]
+      ],
+      "args": []
     }
   ],
   "accounts": [
     {
       "name": "Challenge",
-      "discriminator": [119, 250, 161, 121, 119, 81, 22, 208]
+      "discriminator": [
+        119,
+        250,
+        161,
+        121,
+        119,
+        81,
+        22,
+        208
+      ]
+    },
+    {
+      "name": "OrganizerStats",
+      "discriminator": [
+        133,
+        62,
+        23,
+        127,
+        40,
+        14,
+        217,
+        218
+      ]
     }
   ],
   "errors": [
@@ -250,6 +474,41 @@
       "code": 6007,
       "name": "ChallengeNotFinalized",
       "msg": "Challenge not finalized"
+    },
+    {
+      "code": 6008,
+      "name": "TitleTooLong",
+      "msg": "Title too long"
+    },
+    {
+      "code": 6009,
+      "name": "ChallengeNotActive",
+      "msg": "Challenge is not currently active"
+    },
+    {
+      "code": 6010,
+      "name": "ChallengeNotOver",
+      "msg": "Challenge has not ended yet"
+    },
+    {
+      "code": 6011,
+      "name": "OnlyTwoParticipantsSupported",
+      "msg": "Only two participants are supported for settlement"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidOutcomeAccounts",
+      "msg": "Winner/loser accounts are invalid for this challenge"
+    },
+    {
+      "code": 6013,
+      "name": "InsufficientEscrowBalance",
+      "msg": "Escrow does not have enough lamports for settlement"
+    },
+    {
+      "code": 6014,
+      "name": "ChallengeRateLimitExceeded",
+      "msg": "Organizer has reached the challenge creation limit for this 24h window"
     }
   ],
   "types": [
@@ -261,6 +520,10 @@
           {
             "name": "organizer",
             "type": "pubkey"
+          },
+          {
+            "name": "title",
+            "type": "string"
           },
           {
             "name": "stake_amount",
@@ -301,8 +564,31 @@
           {
             "name": "participants",
             "type": {
-              "array": ["pubkey", 50]
+              "array": [
+                "pubkey",
+                30
+              ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrganizerStats",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "organizer",
+            "type": "pubkey"
+          },
+          {
+            "name": "window_start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "count_in_window",
+            "type": "u8"
           }
         ]
       }
