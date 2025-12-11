@@ -45,12 +45,21 @@ export async function POST(request: NextRequest) {
     // Refresh access token if needed
     let accessToken = googleFit.accessToken;
     let updatedTokens = null;
-    if (Date.now() >= googleFit.expiresAt) {
-      accessToken = await refreshAccessToken(googleFit.refreshToken);
-      updatedTokens = {
-        accessToken,
-        expiresAt: Date.now() + (3600 * 1000), // 1 hour
-      };
+    const expiresAt = googleFit.expiresAt || 0;
+    if (!accessToken || Date.now() >= expiresAt) {
+      try {
+        accessToken = await refreshAccessToken(googleFit.refreshToken);
+        updatedTokens = {
+          accessToken,
+          expiresAt: Date.now() + (3600 * 1000), // 1 hour
+        };
+      } catch (refreshError: any) {
+        console.error("Token refresh failed:", refreshError);
+        return NextResponse.json(
+          { error: "Failed to refresh access token. Please reconnect Google Fit." },
+          { status: 401 }
+        );
+      }
     }
 
     // Fetch steps data from Google Fit API
@@ -60,7 +69,11 @@ export async function POST(request: NextRequest) {
 
     const datasetId = `${startTime}-${endTime}`;
 
-    // Get steps data
+    // Get steps data - try multiple data sources for better compatibility
+    let totalSteps = 0;
+    let stepsError: string | null = null;
+    
+    // Try primary data source first
     const stepsResponse = await fetch(
       `https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate`,
       {
@@ -83,28 +96,68 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    if (!stepsResponse.ok) {
-      const errorText = await stepsResponse.text();
-      console.error("Google Fit API error:", errorText);
-      return NextResponse.json(
-        { error: "Failed to fetch steps data" },
-        { status: 500 }
+    if (stepsResponse.ok) {
+      const stepsData = await stepsResponse.json();
+      if (stepsData.bucket) {
+        stepsData.bucket.forEach((bucket: any) => {
+          if (bucket.dataset?.[0]?.point) {
+            bucket.dataset[0].point.forEach((point: any) => {
+              if (point.value?.[0]?.intVal) {
+                totalSteps += point.value[0].intVal;
+              }
+            });
+          }
+        });
+      }
+    } else {
+      // Try alternative data source without specifying dataSourceId
+      const altStepsResponse = await fetch(
+        `https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            aggregateBy: [
+              {
+                dataTypeName: "com.google.step_count.delta",
+              },
+            ],
+            bucketByTime: { durationMillis: 86400000 },
+            startTimeMillis: startTime,
+            endTimeMillis: endTime,
+          }),
+        }
       );
-    }
 
-    const stepsData = await stepsResponse.json();
-    let totalSteps = 0;
-
-    if (stepsData.bucket) {
-      stepsData.bucket.forEach((bucket: any) => {
-        if (bucket.dataset?.[0]?.point) {
-          bucket.dataset[0].point.forEach((point: any) => {
-            if (point.value?.[0]?.intVal) {
-              totalSteps += point.value[0].intVal;
+      if (altStepsResponse.ok) {
+        const stepsData = await altStepsResponse.json();
+        if (stepsData.bucket) {
+          stepsData.bucket.forEach((bucket: any) => {
+            if (bucket.dataset?.[0]?.point) {
+              bucket.dataset[0].point.forEach((point: any) => {
+                if (point.value?.[0]?.intVal) {
+                  totalSteps += point.value[0].intVal;
+                }
+              });
             }
           });
         }
-      });
+      } else {
+        // Log error but don't fail the entire sync
+        const errorText = await altStepsResponse.text();
+        let errorJson: any = {};
+        try {
+          errorJson = JSON.parse(errorText);
+        } catch {
+          // Not JSON, use text
+        }
+        stepsError = errorJson?.error?.message || errorText || "No step data available";
+        console.warn("Google Fit steps API error:", stepsError);
+        // Continue with other metrics even if steps fail
+      }
     }
 
     // Get distance data
@@ -266,7 +319,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Return synced data (client will update Firestore)
-    return NextResponse.json({
+    // Include warnings if any metrics failed
+    const response: any = {
       success: true,
       steps: totalSteps,
       distanceMeters: totalDistance,
@@ -274,7 +328,14 @@ export async function POST(request: NextRequest) {
       activeMinutes,
       averageHeartRate: heartRateCount > 0 ? Math.round(heartRateSum / heartRateCount) : null,
       updatedTokens, // Include if token was refreshed
-    });
+    };
+
+    // Add warnings for any failed metrics
+    if (stepsError) {
+      response.warnings = { steps: stepsError };
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error("Google Fit sync error:", error);
     return NextResponse.json(
