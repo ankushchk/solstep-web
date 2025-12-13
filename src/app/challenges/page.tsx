@@ -44,8 +44,13 @@ export default function ChallengesPage() {
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [finalizingId, setFinalizingId] = useState<string | null>(null);
-  const [selectedChallenge, setSelectedChallenge] = useState<PublicKey | null>(null);
-  const [txStatus, setTxStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [selectedChallenge, setSelectedChallenge] = useState<PublicKey | null>(
+    null
+  );
+  const [txStatus, setTxStatus] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const [stakeSol, setStakeSol] = useState("0.1");
   const [durationHours, setDurationHours] = useState("24");
@@ -59,7 +64,7 @@ export default function ChallengesPage() {
       setCreating(true);
       setTxStatus(null);
       const stakeAmountLamports = BigInt(
-        Math.floor(Number(stakeSol || "0") * LAMPORTS_PER_SOL),
+        Math.floor(Number(stakeSol || "0") * LAMPORTS_PER_SOL)
       );
       const duration = Number(durationHours || "24") * 60 * 60;
 
@@ -72,14 +77,18 @@ export default function ChallengesPage() {
       });
 
       await initEscrowMutation.mutateAsync(challengePda);
-      setTxStatus({ type: "success", message: "Challenge created successfully!" });
+      setTxStatus({
+        type: "success",
+        message: "Challenge created successfully!",
+      });
       // Reset form
       setStakeSol("0.1");
       setDurationHours("24");
       setMaxParticipants("10");
     } catch (e: any) {
       console.error(e);
-      const errorMsg = e?.message || e?.toString() || "Failed to create challenge";
+      const errorMsg =
+        e?.message || e?.toString() || "Failed to create challenge";
       setTxStatus({ type: "error", message: errorMsg });
     } finally {
       setCreating(false);
@@ -91,10 +100,14 @@ export default function ChallengesPage() {
       setJoiningId(pubkey.toBase58());
       setTxStatus(null);
       await joinChallengeMutation.mutateAsync(pubkey);
-      setTxStatus({ type: "success", message: "Successfully joined challenge!" });
+      setTxStatus({
+        type: "success",
+        message: "Successfully joined challenge!",
+      });
     } catch (e: any) {
       console.error(e);
-      const errorMsg = e?.message || e?.toString() || "Failed to join challenge";
+      const errorMsg =
+        e?.message || e?.toString() || "Failed to join challenge";
       setTxStatus({ type: "error", message: errorMsg });
     } finally {
       setJoiningId(null);
@@ -106,10 +119,14 @@ export default function ChallengesPage() {
       setFinalizingId(pubkey.toBase58());
       setTxStatus(null);
       await finalizeChallengeMutation.mutateAsync(pubkey);
-      setTxStatus({ type: "success", message: "Challenge finalized! You can now payout winners." });
+      setTxStatus({
+        type: "success",
+        message: "Challenge finalized! You can now payout winners.",
+      });
     } catch (e: any) {
       console.error(e);
-      const errorMsg = e?.message || e?.toString() || "Failed to finalize challenge";
+      const errorMsg =
+        e?.message || e?.toString() || "Failed to finalize challenge";
       setTxStatus({ type: "error", message: errorMsg });
     } finally {
       setFinalizingId(null);
@@ -215,14 +232,13 @@ export default function ChallengesPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Active challenges</h2>
             <p className="text-[0.7rem] text-slate-400">
-              {status === "loading"
-                ? "Loading..."
-                : `${challenges.length} found`}
+              {isLoading ? "Loading..." : `${challenges.length} found`}
             </p>
           </div>
           {error && (
             <p className="text-xs text-red-400">
-              Failed to load challenges: {error instanceof Error ? error.message : String(error)}
+              Failed to load challenges:{" "}
+              {error instanceof Error ? error.message : String(error)}
             </p>
           )}
           {challenges.length === 0 && !error && (
@@ -235,19 +251,22 @@ export default function ChallengesPage() {
               const isOrganizer =
                 publicKey &&
                 (() => {
-                  const orgAddress = c.organizer instanceof PublicKey
-                    ? c.organizer.toBase58()
-                    : (typeof c.organizer === "string"
+                  const orgAddress =
+                    c.organizer instanceof PublicKey
+                      ? c.organizer.toBase58()
+                      : typeof c.organizer === "string"
                       ? c.organizer
-                      : (c.organizer && typeof c.organizer === "object" && "toBase58" in c.organizer
-                        ? (c.organizer as { toBase58: () => string }).toBase58()
-                        : ""));
+                      : c.organizer &&
+                        typeof c.organizer === "object" &&
+                        "toBase58" in c.organizer
+                      ? (c.organizer as { toBase58: () => string }).toBase58()
+                      : "";
                   return publicKey.toBase58() === orgAddress;
                 })();
-              const isFull =
-                c.participantCount >= c.maxParticipants;
+              const isFull = c.participantCount >= c.maxParticipants;
               const isSelected = selectedChallenge?.equals(c.publicKey);
-              const canJoin = publicKey && !isOrganizer && !isFull && !c.isFinalized;
+              const canJoin =
+                publicKey && !isOrganizer && !isFull && !c.isFinalized;
               const isEnded = Number(c.endTs) < Math.floor(Date.now() / 1000);
 
               return (
@@ -261,7 +280,8 @@ export default function ChallengesPage() {
                         Stake {formatLamports(c.stakeAmount)} SOL
                       </p>
                       <p className="text-[0.65rem] text-slate-400 break-all font-mono">
-                        {c.publicKey.toBase58().slice(0, 8)}...{c.publicKey.toBase58().slice(-8)}
+                        {c.publicKey.toBase58().slice(0, 8)}...
+                        {c.publicKey.toBase58().slice(-8)}
                       </p>
                       <div className="flex flex-col gap-0.5 mt-1 text-[0.7rem] text-slate-400">
                         <span>Start: {formatTimestamp(c.startTs)}</span>
@@ -283,7 +303,11 @@ export default function ChallengesPage() {
                             : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
                         }`}
                       >
-                        {c.isFinalized ? "Finalized" : isEnded ? "Ended" : "Active"}
+                        {c.isFinalized
+                          ? "Finalized"
+                          : isEnded
+                          ? "Ended"
+                          : "Active"}
                       </span>
                       <span className="text-[0.7rem] text-slate-400">
                         {c.participantCount}/{c.maxParticipants} joined
@@ -323,7 +347,9 @@ export default function ChallengesPage() {
                       {isOrganizer && !c.isFinalized && (
                         <button
                           type="button"
-                          disabled={finalizingId === c.publicKey.toBase58() || !isEnded}
+                          disabled={
+                            finalizingId === c.publicKey.toBase58() || !isEnded
+                          }
                           onClick={() => handleFinalize(c.publicKey)}
                           className="px-3 py-1.5 rounded-full bg-amber-500/90 text-slate-950 text-[0.7rem] font-medium disabled:opacity-50"
                         >
@@ -335,7 +361,11 @@ export default function ChallengesPage() {
                       {isOrganizer && c.isFinalized && (
                         <button
                           type="button"
-                          onClick={() => setSelectedChallenge(isSelected ? null : c.publicKey)}
+                          onClick={() =>
+                            setSelectedChallenge(
+                              isSelected ? null : c.publicKey
+                            )
+                          }
                           className="px-3 py-1.5 rounded-full bg-purple-500/90 text-slate-950 text-[0.7rem] font-medium"
                         >
                           {isSelected ? "Cancel" : "Payout Winner"}
@@ -348,7 +378,8 @@ export default function ChallengesPage() {
                   {isSelected && isOrganizer && c.isFinalized && (
                     <div className="mt-2 pt-3 border-t border-slate-700/50">
                       <p className="text-[0.7rem] text-slate-400">
-                        Challenge finalized. Use settle_challenge to distribute rewards on-chain.
+                        Challenge finalized. Use settle_challenge to distribute
+                        rewards on-chain.
                       </p>
                       <p className="text-[0.65rem] text-slate-500 mt-1">
                         Total pool: {formatLamports(c.totalStake)} SOL
@@ -364,5 +395,3 @@ export default function ChallengesPage() {
     </main>
   );
 }
-
-

@@ -1,14 +1,16 @@
 "use client";
 
-import { createTree } from "@metaplex-foundation/mpl-bubblegum";
-import { createV1, mintV1 } from "@metaplex-foundation/mpl-bubblegum";
+import { createTree, mintV1 } from "@metaplex-foundation/mpl-bubblegum";
 import { generateSigner, keypairIdentity } from "@metaplex-foundation/umi";
 import type { Connection } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
 import { createUmiInstance } from "@/lib/metaplex";
 import { uploadImageToIPFS, uploadMetadataToIPFS } from "./ipfsUpload";
 import { createCheckpointMetadata } from "@/utils/nftMetadata";
-import { toWeb3JsTransaction, fromWeb3JsPublicKey } from "@metaplex-foundation/umi-web3js-adapters";
+import {
+  toWeb3JsTransaction,
+  fromWeb3JsPublicKey,
+} from "@metaplex-foundation/umi-web3js-adapters";
 import { PublicKey } from "@solana/web3.js";
 
 export interface MintNFTParams {
@@ -47,13 +49,13 @@ async function getOrCreateMerkleTree(
   // 3. Or create a new tree per user/challenge
 
   const merkleTree = generateSigner(umi);
-  
+
   // Create a small tree (can hold up to 16 NFTs)
   // For production, you'd want a larger tree
   const maxDepth = 3; // 2^3 = 8 leaves (small tree for testing)
   const maxBufferSize = 8;
 
-  const treeBuilder = createTree(umi, {
+  const treeBuilder = await createTree(umi, {
     merkleTree,
     maxDepth,
     maxBufferSize,
@@ -61,10 +63,6 @@ async function getOrCreateMerkleTree(
 
   const transaction = await treeBuilder.build(umi);
   const web3jsTx = toWeb3JsTransaction(transaction);
-  
-  const { blockhash } = await connection.getLatestBlockhash("finalized");
-  web3jsTx.recentBlockhash = blockhash;
-  web3jsTx.feePayer = wallet.publicKey;
 
   const signature = await wallet.sendTransaction(web3jsTx, connection);
   await connection.confirmTransaction(signature, "confirmed");
@@ -88,7 +86,9 @@ export async function mintCheckpointNFT(
 ): Promise<string> {
   // Validate wallet connection
   if (!wallet.publicKey || !wallet.signTransaction || !wallet.sendTransaction) {
-    throw new Error("Wallet not connected. Please connect your wallet to mint NFT.");
+    throw new Error(
+      "Wallet not connected. Please connect your wallet to mint NFT."
+    );
   }
 
   try {
@@ -128,7 +128,7 @@ export async function mintCheckpointNFT(
     // Step 6: Mint compressed NFT
     params.onProgress?.("Minting compressed NFT (almost free!)...");
     const leafOwner = fromWeb3JsPublicKey(wallet.publicKey);
-    
+
     const mintBuilder = mintV1(umi, {
       leafOwner,
       merkleTree: treePublicKey,
@@ -145,12 +145,11 @@ export async function mintCheckpointNFT(
 
     const transaction = await mintBuilder.build(umi);
     const web3jsTx = toWeb3JsTransaction(transaction);
-    
-    // Get fresh blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("finalized");
-    web3jsTx.recentBlockhash = blockhash;
-    web3jsTx.feePayer = wallet.publicKey;
-    
+
+    // Get fresh blockhash for confirmation
+    const { blockhash, lastValidBlockHeight } =
+      await connection.getLatestBlockhash("finalized");
+
     // Sign and send transaction
     const signature = await wallet.sendTransaction(web3jsTx, connection, {
       skipPreflight: false,
@@ -172,11 +171,13 @@ export async function mintCheckpointNFT(
       // Check status even if confirmation times out
       const status = await connection.getSignatureStatus(signature);
       if (status?.value?.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+        throw new Error(
+          `Transaction failed: ${JSON.stringify(status.value.err)}`
+        );
       }
       console.warn("Confirmation timeout, but transaction appears successful");
     }
-    
+
     // Wait a bit for final confirmation
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -188,21 +189,34 @@ export async function mintCheckpointNFT(
     return assetId;
   } catch (error) {
     console.error("Error minting compressed NFT:", error);
-    
+
     // Provide user-friendly error messages
     if (error instanceof Error) {
-      if (error.message.includes("User rejected") || error.message.includes("reject")) {
+      if (
+        error.message.includes("User rejected") ||
+        error.message.includes("reject")
+      ) {
         throw new Error("Transaction cancelled. NFT minting was cancelled.");
       }
-      if (error.message.includes("insufficient funds") || error.message.includes("0 SOL")) {
-        throw new Error("Insufficient SOL balance. You need approximately 0.00001 SOL to mint a compressed NFT.");
+      if (
+        error.message.includes("insufficient funds") ||
+        error.message.includes("0 SOL")
+      ) {
+        throw new Error(
+          "Insufficient SOL balance. You need approximately 0.00001 SOL to mint a compressed NFT."
+        );
       }
-      if (error.message.includes("network") || error.message.includes("timeout")) {
-        throw new Error("Network error. Please check your connection and try again.");
+      if (
+        error.message.includes("network") ||
+        error.message.includes("timeout")
+      ) {
+        throw new Error(
+          "Network error. Please check your connection and try again."
+        );
       }
       throw new Error(`Failed to mint NFT: ${error.message}`);
     }
-    
+
     throw new Error("Failed to mint NFT. Please try again.");
   }
 }

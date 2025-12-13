@@ -122,7 +122,7 @@ function CameraPageContent() {
     try {
       setIsCapturing(true);
       const screenshot = webcamRef.current.getScreenshot();
-      
+
       if (!screenshot) {
         console.error("Screenshot returned null");
         setError("Failed to capture image. Please try again.");
@@ -135,18 +135,14 @@ function CameraPageContent() {
       setIsCapturing(false);
     } catch (e) {
       console.error("Capture error:", e);
-      setError(`Capture failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+      setError(
+        `Capture failed: ${e instanceof Error ? e.message : "Unknown error"}`
+      );
       setIsCapturing(false);
     }
-  }, [isAtCheckpoint, LOCATION_VERIFICATION_RADIUS_METERS]);
+  }, [isAtCheckpoint]);
 
   const handleSave = async () => {
-      hasUser: !!user,
-      isAlreadyCollected,
-      currentPosition,
-      geoStatus,
-    });
-
     if (!preview || !checkpointLocation) {
       setError("Missing capture or location data.");
       console.error("Missing data:", {
@@ -191,12 +187,6 @@ function CameraPageContent() {
       LOCATION_VERIFICATION_RADIUS_METERS
     );
 
-      checkpointLocation,
-      isAtLocation,
-      actualDistanceMeters: Math.round(actualDistance),
-      radius: LOCATION_VERIFICATION_RADIUS_METERS,
-    });
-
     if (!isAtLocation) {
       const distance = Math.round(actualDistance);
       const errorMsg = `Location verification failed! You are ${distance}m away from the checkpoint. Please move to the location to capture.`;
@@ -213,7 +203,6 @@ function CameraPageContent() {
     setError(null);
 
     try {
-
       if (!preview) {
         throw new Error("No preview image available");
       }
@@ -228,14 +217,14 @@ function CameraPageContent() {
             imageDataUrl: preview,
             checkpointId,
             checkpointName,
-            location: checkpointLocation,
-            verifiedLocation: currentPosition,
+            location: checkpointLocation!,
+            verifiedLocation: currentPosition!,
             collectedAt: new Date().toISOString(),
-            userId: user.uid,
+            userId: user!.uid,
           });
 
           setNftMintAddress(mintAddress);
-          
+
           toast.success(
             <div>
               <div>NFT minted successfully!</div>
@@ -270,7 +259,7 @@ function CameraPageContent() {
         checkpointId,
         checkpointName,
         imageDataUrl: preview,
-        location: checkpointLocation,
+        location: checkpointLocation!,
         mintAddress,
       });
 
@@ -284,7 +273,7 @@ function CameraPageContent() {
             where("checkpointId", "==", checkpointId)
           );
           const avatarsSnap = await getDocs(avatarsQuery);
-          
+
           if (!avatarsSnap.empty) {
             // Update the most recent one (should be the one we just created)
             const avatarDoc = avatarsSnap.docs[0];
@@ -293,11 +282,13 @@ function CameraPageContent() {
             });
           }
         } catch (updateError) {
-          console.error("Error updating avatar with mint address:", updateError);
+          console.error(
+            "Error updating avatar with mint address:",
+            updateError
+          );
           // Non-critical error, continue
         }
       }
-
 
       // Check and update challenge progress (no wallet required)
       if (user) {
@@ -457,11 +448,12 @@ function CameraPageContent() {
               screenshotFormat="image/jpeg"
               videoConstraints={videoConstraints}
               className="h-full w-full object-cover"
-              onUserMedia={() => {
-              }}
+              onUserMedia={() => {}}
               onUserMediaError={(error) => {
                 console.error("Webcam error:", error);
-                setError("Camera access denied or unavailable. Please allow camera permissions.");
+                setError(
+                  "Camera access denied or unavailable. Please allow camera permissions."
+                );
               }}
             />
           </div>
@@ -511,8 +503,8 @@ function CameraPageContent() {
                     disabled={isSaving || isMinting}
                     className="w-4 h-4 rounded border-purple-500 text-purple-600 focus:ring-purple-500 focus:ring-2"
                   />
-                  <label 
-                    htmlFor="mintNFT" 
+                  <label
+                    htmlFor="mintNFT"
                     className="text-xs text-slate-300 cursor-pointer flex-1"
                   >
                     🎨 Mint as Compressed NFT (Almost Free!)
@@ -522,7 +514,7 @@ function CameraPageContent() {
                   </label>
                 </div>
               )}
-              
+
               {!publicKey && (
                 <div className="p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
                   <p className="text-xs text-slate-400">
@@ -578,7 +570,13 @@ function CameraPageContent() {
 
 export default function CameraPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-50">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-50">
+          Loading...
+        </div>
+      }
+    >
       <CameraPageContent />
     </Suspense>
   );
